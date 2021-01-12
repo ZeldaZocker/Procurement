@@ -9,7 +9,7 @@ using System.Security;
 using POEApi.Infrastructure.Events;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-using CloudflareSolverRe;
+//using CloudflareSolverRe;
 
 namespace POEApi.Transport {
     public class HttpTransport : ITransport {
@@ -79,7 +79,7 @@ namespace POEApi.Transport {
                 return true;
             } catch (WebException ex) {
                 if (((HttpWebResponse)ex.Response).Server == "cloudflare" && ((HttpWebResponse)ex.Response).StatusCode == HttpStatusCode.ServiceUnavailable) {
-                    CloudFlareSessionIdLogin();
+                 //   CloudFlareSessionIdLogin();
                     return true;
                 }
 
@@ -87,24 +87,24 @@ namespace POEApi.Transport {
             }
         }
 
-        private void CloudFlareSessionIdLogin() {
-            try {
-                using (var clearanceHandler = new ClearanceHandler { })
-                using (var handler = new HttpClientHandler() { CookieContainer = credentialCookies, Proxy = GetProxySettings() }) {
-                    clearanceHandler.InnerHandler = handler;
+        //private void CloudFlareSessionIdLogin() {
+        //    try {
+        //        using (var clearanceHandler = new ClearanceHandler { })
+        //        using (var handler = new HttpClientHandler() { CookieContainer = credentialCookies, Proxy = GetProxySettings() }) {
+        //            clearanceHandler.InnerHandler = handler;
 
-                    using (var client = new HttpClient(clearanceHandler)) {
-                        var result = client.GetStringAsync(new Uri(LoginURL)).Result;
-                    }
-                }
-            } catch (AggregateException ex) when (ex.InnerException is CloudflareSolverRe.Exceptions.CloudflareClearanceException) {
-                // After all retries, clearance still failed.
-                throw new Exception("Cloud flare clearance failed, please wait one minute and try again", ex);
-            } catch (AggregateException ex) when (ex.InnerException is TaskCanceledException) {
-                Logger.Log(ex);
-                throw;
-            }
-        }
+        //            using (var client = new HttpClient(clearanceHandler)) {
+        //                var result = client.GetStringAsync(new Uri(LoginURL)).Result;
+        //            }
+        //        }
+        //    } catch (AggregateException ex) when (ex.InnerException is CloudflareSolverRe.Exceptions.CloudflareClearanceException) {
+        //        // After all retries, clearance still failed.
+        //        throw new Exception("Cloud flare clearance failed, please wait one minute and try again", ex);
+        //    } catch (AggregateException ex) when (ex.InnerException is TaskCanceledException) {
+        //        Logger.Log(ex);
+        //        throw;
+        //    }
+        //}
 
         private void TraditionalSessionIdLogin() {
             // using (var sessionIdLoginResponse = BuildHttpRequestAndGetResponse(HttpMethod.GET, LoginURL)) {
