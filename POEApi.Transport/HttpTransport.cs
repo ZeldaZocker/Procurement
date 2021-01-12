@@ -9,12 +9,10 @@ using System.Security;
 using POEApi.Infrastructure.Events;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-using CloudflareSolverRe; 
+using CloudflareSolverRe;
 
-namespace POEApi.Transport
-{
-    public class HttpTransport : ITransport
-    {
+namespace POEApi.Transport {
+    public class HttpTransport : ITransport {
         protected enum HttpMethod { GET, POST }
 
         private string _email;
@@ -26,6 +24,7 @@ namespace POEApi.Transport
         private string _proxyDomain;
 
         private const string LoginURL = @"https://www.pathofexile.com/login";
+        private const string AccountURL = @"https://www.pathofexile.com/my-account";
         private const string AccountNameURL = @"https://www.pathofexile.com/character-window/get-account-name?realm={0}";
         private const string CharacterURL = @"https://www.pathofexile.com/character-window/get-characters?&realm={0}";
         private const string StashURL = @"https://www.pathofexile.com/character-window/get-stash-items?league={0}&tabs=1&tabIndex={1}&accountName={2}&realm={3}";
@@ -46,49 +45,40 @@ namespace POEApi.Transport
 
         private static TaskThrottle _taskThrottle = new TaskThrottle(TimeSpan.FromMinutes(1), 42, 42);
 
-        public HttpTransport(string login)
-        {
+        public HttpTransport(string login) {
             credentialCookies = new CookieContainer();
             _email = login;
             _taskThrottle.Throttled += new ThottledEventHandler(instance_Throttled);
         }
 
         public HttpTransport(string login, string proxyUser, string proxyPassword, string proxyDomain)
-            : this(login)
-        {
+            : this(login) {
             _proxyUser = proxyUser;
             _proxyPassword = proxyPassword;
             _proxyDomain = proxyDomain;
             _useProxy = true;
         }
 
-        private void instance_Throttled(object sender, ThottledEventArgs e)
-        {
+        private void instance_Throttled(object sender, ThottledEventArgs e) {
             if (Throttled != null)
                 Throttled(this, e);
         }
 
-        public bool Authenticate(string email, SecureString password)
-        {
+        public bool Authenticate(string email, SecureString password) {
             // A lot of users are reporting issue with logging in. Trimming their SessionID will hopefully improve
             // the situation.
             var unwrappedPassword = password.UnWrap();
-            if (!string.IsNullOrEmpty(unwrappedPassword))
-            {
+            if (!string.IsNullOrEmpty(unwrappedPassword)) {
                 unwrappedPassword = unwrappedPassword.Trim();
             }
 
             credentialCookies.Add(new Cookie("POESESSID", unwrappedPassword, "/", ".pathofexile.com"));
 
-            try
-            {
+            try {
                 TraditionalSessionIdLogin();
                 return true;
-            }
-            catch (WebException ex)
-            {
-                if (((HttpWebResponse)ex.Response).Server == "cloudflare" && ((HttpWebResponse)ex.Response).StatusCode == HttpStatusCode.ServiceUnavailable)
-                {
+            } catch (WebException ex) {
+                if (((HttpWebResponse)ex.Response).Server == "cloudflare" && ((HttpWebResponse)ex.Response).StatusCode == HttpStatusCode.ServiceUnavailable) {
                     CloudFlareSessionIdLogin();
                     return true;
                 }
@@ -97,46 +87,45 @@ namespace POEApi.Transport
             }
         }
 
-        private void CloudFlareSessionIdLogin()
-        {
-            try
-            {
+        private void CloudFlareSessionIdLogin() {
+            try {
                 using (var clearanceHandler = new ClearanceHandler { })
-                using (var handler = new HttpClientHandler() { CookieContainer = credentialCookies, Proxy = GetProxySettings() })
-                {
+                using (var handler = new HttpClientHandler() { CookieContainer = credentialCookies, Proxy = GetProxySettings() }) {
                     clearanceHandler.InnerHandler = handler;
 
-                    using (var client = new HttpClient(clearanceHandler))
-                    {
+                    using (var client = new HttpClient(clearanceHandler)) {
                         var result = client.GetStringAsync(new Uri(LoginURL)).Result;
                     }
                 }
-            }
-            catch (AggregateException ex) when (ex.InnerException is CloudflareSolverRe.Exceptions.CloudflareClearanceException)
-            {
+            } catch (AggregateException ex) when (ex.InnerException is CloudflareSolverRe.Exceptions.CloudflareClearanceException) {
                 // After all retries, clearance still failed.
                 throw new Exception("Cloud flare clearance failed, please wait one minute and try again", ex);
-            }
-            catch (AggregateException ex) when (ex.InnerException is TaskCanceledException)
-            {
+            } catch (AggregateException ex) when (ex.InnerException is TaskCanceledException) {
                 Logger.Log(ex);
                 throw;
             }
         }
 
-        private void TraditionalSessionIdLogin()
-        {
-            using (var sessionIdLoginResponse = BuildHttpRequestAndGetResponse(HttpMethod.GET, LoginURL))
-            {
+        private void TraditionalSessionIdLogin() {
+            // using (var sessionIdLoginResponse = BuildHttpRequestAndGetResponse(HttpMethod.GET, LoginURL)) {
+            using (var sessionIdLoginResponse = BuildHttpRequestAndGetResponse(HttpMethod.GET, AccountURL)) {
                 // If the response URI is the login URL, then the login action failed.
-                if (sessionIdLoginResponse.ResponseUri.ToString() == LoginURL)
+                //if (sessionIdLoginResponse.ResponseUri.ToString() == LoginURL)
+                //    throw new LogonFailedException();
+
+                if (sessionIdLoginResponse.ResponseUri.ToString() == AccountURL) {
+                    // Login succeeded, otherwise the POESESSID is wrong
+                }
+
+                // If the response URI is the login URL, then the login action failed.
+                if (sessionIdLoginResponse.ResponseUri.ToString() == LoginURL) {
                     throw new LogonFailedException();
+                }
             }
         }
 
         private HttpWebRequest GetHttpRequest(HttpMethod method, string url, bool? allowAutoRedirects = null,
-            string requestData = null)
-        {
+            string requestData = null) {
             HttpWebRequest request = (HttpWebRequest)WebRequest.Create(new Uri(url));
             request.CookieContainer = credentialCookies;
             request.UserAgent = UserAgent;
@@ -144,13 +133,11 @@ namespace POEApi.Transport
             request.Proxy = GetProxySettings();
             request.ContentType = ContentType;
 
-            if (allowAutoRedirects.HasValue)
-            {
+            if (allowAutoRedirects.HasValue) {
                 request.AllowAutoRedirect = allowAutoRedirects.Value;
             }
 
-            if (method == HttpMethod.POST && requestData != null)
-            {
+            if (method == HttpMethod.POST && requestData != null) {
                 byte[] byteData = UTF8Encoding.UTF8.GetBytes(requestData);
                 request.ContentLength = byteData.Length;
                 Stream postStream = request.GetRequestStream();
@@ -160,16 +147,14 @@ namespace POEApi.Transport
             return request;
         }
 
-        private IWebProxy GetProxySettings()
-        {
+        private IWebProxy GetProxySettings() {
             if (_useProxy)
                 return ProcessProxySettings();
 
             return null;
         }
 
-        public IWebProxy ProcessProxySettings()
-        {
+        public IWebProxy ProcessProxySettings() {
             var proxy = WebRequest.DefaultWebProxy;
             proxy.Credentials = new NetworkCredential(_proxyUser, _proxyPassword, _proxyDomain);
 
@@ -177,16 +162,12 @@ namespace POEApi.Transport
         }
 
         protected HttpWebResponse BuildHttpRequestAndGetResponse(HttpMethod method, string url,
-            bool? allowAutoRedirects = null, string requestData = null)
-        {
+            bool? allowAutoRedirects = null, string requestData = null) {
             _taskThrottle.StartTask();
-            try
-            {
+            try {
                 HttpWebRequest request = GetHttpRequest(method, url, allowAutoRedirects, requestData);
                 return (HttpWebResponse)request.GetResponse();
-            }
-            catch (System.Net.WebException ex)
-            {
+            } catch (System.Net.WebException ex) {
                 Logger.Log(string.Format("Failed to build HTTP request and get response for: method={0}, url='{1}', " +
                     "allowAutoRedirects={2}, requestData='{3}': {4}", method.ToString(), url, allowAutoRedirects,
                     requestData, ex.Message));
@@ -196,74 +177,60 @@ namespace POEApi.Transport
                 // ((HttpWebResponse)ex.Response).StatusDescription --> "Service Temporarily Unavailable"
                 // In theory, we could return this response, and the caller would need to figure out if it is valid.
                 throw;
-            }
-            finally
-            {
+            } finally {
                 _taskThrottle.CompleteTask();
             }
         }
 
         protected MemoryStream PerformHttpRequest(HttpMethod method, string url, bool? allowAutoRedirects = null,
-            string requestData = null)
-        {
-            using (var response = BuildHttpRequestAndGetResponse(method, url, allowAutoRedirects, requestData))
-            {
+            string requestData = null) {
+            using (var response = BuildHttpRequestAndGetResponse(method, url, allowAutoRedirects, requestData)) {
                 MemoryStream responseStream = GetMemoryStreamFromResponse(response);
                 return responseStream;
             }
         }
 
         // The refresh parameter in this ITransport implementation is ignored.
-        public Stream GetStash(int index, string league, string accountName, string realm, bool refresh)
-        {
+        public Stream GetStash(int index, string league, string accountName, string realm, bool refresh) {
             var url = string.Format(StashURL, league, index, accountName, realm);
             return PerformHttpRequest(HttpMethod.GET, url);
         }
 
-        public Stream GetStash(int index, string league, string accountName, string realm)
-        {
+        public Stream GetStash(int index, string league, string accountName, string realm) {
             return GetStash(index, league, accountName, realm, false);
         }
 
-        public Stream GetCharacters(string realm )
-        {
+        public Stream GetCharacters(string realm) {
             return PerformHttpRequest(HttpMethod.GET, string.Format(CharacterURL, realm));
         }
 
-        public Stream GetAccountName(string realm )
-        {
+        public Stream GetAccountName(string realm) {
             return PerformHttpRequest(HttpMethod.GET, string.Format(AccountNameURL, realm));
         }
 
         // TODO(20180928): Throttle performing these requests?
-        public Stream GetImage(string url)
-        {
+        public Stream GetImage(string url) {
             WebClient client = new WebClient();
             client.Proxy = ProcessProxySettings();
             return new MemoryStream(client.DownloadData(url));
         }
 
-        public Stream GetInventory(string characterName, bool forceRefresh, string accountName, string realm )
-        {
+        public Stream GetInventory(string characterName, bool forceRefresh, string accountName, string realm) {
             var url = string.Format(InventoryURL, characterName, accountName, realm);
             return PerformHttpRequest(HttpMethod.GET, url);
         }
 
-        private MemoryStream GetMemoryStreamFromResponse(HttpWebResponse response)
-        {
+        private MemoryStream GetMemoryStreamFromResponse(HttpWebResponse response) {
             StreamReader reader = new StreamReader(response.GetResponseStream());
             byte[] buffer = reader.ReadAllBytes();
 
             return new MemoryStream(buffer);
         }
 
-        public bool UpdateThread(string threadID, string threadTitle, string threadText)
-        {
-            try
-            {
+        public bool UpdateThread(string threadID, string threadTitle, string threadText) {
+            try {
                 string threadHash = GetThreadHash(string.Format(UpdateShopURL, threadID), HashRegEx);
-                if (string.IsNullOrEmpty(threadHash))
-                {
+                if (string.IsNullOrEmpty(threadHash)) {
                     throw new ForumThreadException("Unable to obtain thread hash to update thread.");
                 }
 
@@ -278,22 +245,17 @@ namespace POEApi.Transport
                 // the update request was a success or failure, respectively.
 
                 return true;
-            }
-            catch (Exception ex)
-            {
+            } catch (Exception ex) {
                 Logger.Log("Error updating shop thread: " + ex.ToString());
                 return false;
             }
         }
 
-        public bool BumpThread(string threadID, string threadTitle)
-        {
-            try
-            {
+        public bool BumpThread(string threadID, string threadTitle) {
+            try {
                 string threadHash = ValidateAndGetHash(string.Format(BumpShopURL, threadID), threadTitle,
                     HashRegEx);
-                if (string.IsNullOrEmpty(threadHash))
-                {
+                if (string.IsNullOrEmpty(threadHash)) {
                     throw new ForumThreadException("Unable to obtain thread hash to bump thread.");
                 }
 
@@ -309,16 +271,13 @@ namespace POEApi.Transport
                 // the post request was a success or failure, respectively.
 
                 return true;
-            }
-            catch (Exception ex)
-            {
+            } catch (Exception ex) {
                 Logger.Log("Error bumping shop thread: " + ex.ToString());
                 return false;
             }
         }
 
-        private string ValidateAndGetHash(string url, string threadTitle, string hashRegex)
-        {
+        private string ValidateAndGetHash(string url, string threadTitle, string hashRegex) {
             string html = DownloadPageData(url);
 
             var title = Regex.Match(html, TitleRegex).Groups["Title"].Value;
@@ -329,28 +288,24 @@ namespace POEApi.Transport
             return Regex.Match(html, hashRegex).Groups["hash"].Value;
         }
 
-        private string GetThreadHash(string url, string regex)
-        {
+        private string GetThreadHash(string url, string regex) {
             string html = DownloadPageData(url);
             return Regex.Match(html, regex).Groups["hash"].Value;
         }
 
-        private string DownloadPageData(string url)
-        {
+        private string DownloadPageData(string url) {
             var response = BuildHttpRequestAndGetResponse(HttpMethod.GET, url);
-            using (StreamReader reader = new StreamReader(response.GetResponseStream()))
-            {
+            using (StreamReader reader = new StreamReader(response.GetResponseStream())) {
                 return reader.ReadToEnd();
             }
         }
     }
 
-    public class Realm
-    {
+    public class Realm {
         public const string PC = "pc";
         public const string XBOX = "xbox";
         public const string SONY = "sony";
 
-        public static IEnumerable<string> AvailableRealms = new List<string>() {PC, XBOX, SONY};
+        public static IEnumerable<string> AvailableRealms = new List<string>() { PC, XBOX, SONY };
     }
 }
